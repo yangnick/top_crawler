@@ -23,7 +23,7 @@ for i in urls:
 Queue.queue已经是线程安全的了，不用管。
 创建线程类和方法，run方法实现上述伪代码。
 
-用bloom filter来优化visited。
+用bloom filter来优化visited，调用了https://github.com/jaybaird/python-bloomfilter里的内容。
 
 加入命令行控制，以getopt实现。
 对于-l选项，以前的停止策略是queue为空，
