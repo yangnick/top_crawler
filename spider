@@ -1,0 +1,134 @@
+#!/usr/bin/env python
+# -*- coding: cp936 -*-
+import Queue
+import threading
+import requests
+import time
+import os
+from bs4 import BeautifulSoup
+from pybloom import BloomFilter
+import sys,getopt
+          
+start_host = ["http://www.topit.me/"]
+lock = threading.Lock()
+se = threading.Event()
+queue = Queue.Queue()
+num = 1
+visited = BloomFilter(capacity=2000000, error_rate=0.001)
+Num_of_Threads = 10
+Num_of_Pics = -1
+imags_dir = os.getcwd()+ os.sep+'pics'+os.sep
+limit = False
+class ThreadUrl(threading.Thread):
+
+    def __init__(self, pics, queue, threadname):
+        threading.Thread.__init__(self,name=threadname)
+        self.queue = queue
+        self.Num_of_Pics = pics
+          
+    def run(self):
+        
+        global num
+        global limit
+        
+        while self.Num_of_Pics<0 or num<self.Num_of_Pics:
+            start = time.time()
+            host = self.queue.get()
+            print "%s %s %s" % (self.getName(), self.queue.qsize() , host)
+            try :  
+                
+                res = requests.get(host)
+                soup = BeautifulSoup(res.content,from_encoding="utf-8")
+                
+                
+            except Exception,e:
+                print e
+                
+            else:
+                
+                if host and 'topit.me/item' in host:
+                    img_url = soup.find("img",{"class":"img admin_collection"})
+                    if img_url:  
+                        img=img_url['src']
+                        #download the img
+                        r = requests.get(img,stream=True)
+                        if r.status_code==200 :
+                            filename = imags_dir + img[img.rindex('/')+1:]
+                            chunk_size = 100000
+                            with open(filename, 'wb') as fd:                                
+                                for chunk in r.iter_content(chunk_size):
+                                    fd.write(chunk)
+                            lock.acquire()
+                            num+=1
+                            lock.release()
+                                
+                    
+                else:
+                    
+                    for link in soup.find_all('a'):
+                        url = link.get('href')
+                        if url and 'topit.me' in url and not url.endswith('.apk') and url not in visited :
+                            queue.put(url)
+                            visited.add(url)               
+                    
+            finally:
+                
+                self.queue.task_done()
+                time.sleep(1)
+                #print "%s cost: %s %s" % (self.getName(), time.time() - start, host)
+        se.set()
+        
+def main():
+    global imags_dir
+    global Num_of_Threads
+    global Num_of_Pics
+    global limit
+    try:
+        opts,args = getopt.getopt(sys.argv[1:],"hn:o:l:")
+    except getopt.GetoptError,e:
+        print e
+        usage()
+        sys.exit()
+    
+    for opt,value in opts:
+        if opt == "-h":
+            usage()
+            sys.exit()
+        if opt == "-n":
+            Num_of_Threads = int(value)
+        if opt == "-o":
+            imags_dir = value
+        if opt == "-l":
+            Num_of_Pics = int(value)
+            limit = True
+        else:
+            usage()
+            sys.exit()
+    if not os.path.exists(imags_dir):
+        os.mkdir(imags_dir)    
+    
+    
+    for i in range(Num_of_Threads):
+        t = ThreadUrl(Num_of_Pics,queue,'Thread_'+str(i+1))
+        t.setDaemon(True)
+        t.start()
+              
+    
+    for host in start_host:
+        visited.add(host)
+        queue.put(host)
+           
+    
+    if limit:
+        se.wait()
+        
+    else:    
+        queue.join()
+
+start = time.time()          
+main()
+print "Cost Time: %s" % (time.time() - start)
+
+
+
+
